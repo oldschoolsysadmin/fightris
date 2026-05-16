@@ -8,10 +8,11 @@ import (
 )
 
 const (
-	BoardWidth  = 10
-	BoardHeight = 22 // 20 visible + 2 buffer rows at top for spawning
-	SpawnRow    = 20 // pivot row for newly spawned pieces (0-indexed from bottom)
-	SpawnCol    = 4  // pivot col — centers most pieces on a 10-wide board
+	BoardWidth   = 10
+	BoardHeight  = 22 // 20 visible + 2 buffer rows at top for spawning
+	VisibleRows  = 20
+	SpawnRow     = 20 // pivot row for newly spawned pieces (0-indexed from bottom)
+	SpawnCol     = 4  // pivot col — centers most pieces on a 10-wide board
 )
 
 // State holds everything needed to represent a game in progress.
