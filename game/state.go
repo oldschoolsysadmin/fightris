@@ -98,14 +98,13 @@ func (s *State) MoveDown() bool {
 	return s.tryMove(s.Active.Moved(-1, 0))
 }
 
-// HardDrop instantly drops the piece to its lowest valid position and locks it.
-// Returns the number of rows dropped.
+// HardDrop instantly drops the piece to its lowest valid position.
+// Returns the number of rows dropped. Caller must call LockActive + SpawnPiece.
 func (s *State) HardDrop() int {
 	dropped := 0
 	for s.tryMove(s.Active.Moved(-1, 0)) {
 		dropped++
 	}
-	s.LockActive()
 	return dropped
 }
 

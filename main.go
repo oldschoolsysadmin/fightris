@@ -50,8 +50,19 @@ func main() {
 	defer s.Fini()
 
 	st := game.New()
-	st.SpawnPiece(piece.I)
 	ih := game.NewInputHandler(st)
+
+	// lockAndSpawn is the single path for locking a placed piece and spawning
+	// the next one. Both gravity (EventInterrupt) and hard drop converge here
+	// so lock-event hooks fire exactly once per piece.
+	lockAndSpawn := func() bool {
+		st.LockActive()
+		return st.SpawnPiece(piece.I) // TODO: replace piece.I with bag randomizer
+	}
+
+	if !st.SpawnPiece(piece.I) {
+		return
+	}
 
 	// Gravity: post an interrupt event on each tick so PollEvent unblocks.
 	ticker := time.NewTicker(500 * time.Millisecond)
@@ -62,26 +73,35 @@ func main() {
 		}
 	}()
 
-	render.Draw(s, st)
-	s.Show()
+	draw := func() {
+		s.Clear()
+		render.Draw(s, st, 0, 0)
+		s.Show()
+	}
+
+	draw()
 
 	for {
 		switch ev := s.PollEvent().(type) {
 		case *tcell.EventKey:
-			if !ih.Handle(keyToAction(ev)) || st.GameOver {
+			action := keyToAction(ev)
+			if !ih.Handle(action) || st.GameOver {
 				return
+			}
+			if action == game.ActionHardDrop {
+				if !lockAndSpawn() {
+					return
+				}
 			}
 		case *tcell.EventInterrupt:
 			if !st.MoveDown() {
-				st.LockActive()
-				if !st.SpawnPiece(piece.I) {
+				if !lockAndSpawn() {
 					return
 				}
 			}
 		case *tcell.EventResize:
 			s.Sync()
 		}
-		render.Draw(s, st)
-		s.Show()
+		draw()
 	}
 }
