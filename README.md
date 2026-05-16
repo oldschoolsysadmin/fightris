@@ -12,7 +12,7 @@
 * powerup ideas:
 * * swap next pieces with opponent
 * * reverse/rotate opponent's input bindings
-* * flip/rotate opponent's display 
+* * flip/rotate opponent's display
 * * cause opponent's piece to rotate per drop (needing correction)
 * * give yourself an I piece
 * * let users make their own plugin (mods)
@@ -21,6 +21,8 @@
 
 1) remove I piece hardcoding and add "next piece" functionality
 2) full single player feature complete (what's missing?)
-3) everything else
+3) two-player deathmatch with bare-bones TCP
 
-```
+## Long Term
+
+the rest
