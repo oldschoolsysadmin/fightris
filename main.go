@@ -6,14 +6,14 @@ package main
 import (
 	"fmt"
 	"time"
+	"github.com/oldschoolsysadmin/netris/game"
+	"github.com/oldschoolsysadmin/netris/game/piece"
 )
-
-// #import game packages here#
 
 func main() {
     // Initialize the game state
-    state := game.NewState()
-    if !state.SpawnPiece(game.PieceTypeI) {
+    state := game.New()
+    if !state.SpawnPiece(piece.I) {
         fmt.Println("Failed to spawn initial piece!")
         return
     }
@@ -26,11 +26,11 @@ func main() {
             // Move the active piece down every tick (default drop)
             if !state.MoveDown() {
                 // Piece has landed; lock it and spawn a new one
-                cleared := state.LockActivePiece()
+                cleared := state.LockActive()
                 fmt.Printf("Locked! Cleared %d lines. Score: %d\n", cleared, state.Score)
 
                 // Spawn a new piece (randomly or sequentially)
-                if !state.SpawnPiece(game.PieceTypeI) {
+                if !state.SpawnPiece(piece.I) {
                     fmt.Println("Game Over!")
                     return
                 }
