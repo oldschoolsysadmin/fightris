@@ -44,9 +44,9 @@ Working single-player Tetris:
 
 ## Side Quest - Serverless matchmaker package
 
-- waiting room frontend
 - NAT traversal for P2P sessions
 - off the shelf?
+- geek-only one-shot delete-after-use AWS deploy package ("just provide your IPs")
 
 ## Milestone 3: Rounds mode
 
