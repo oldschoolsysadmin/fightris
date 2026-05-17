@@ -18,6 +18,22 @@ const (
 // PanelWidth is the total terminal columns consumed by one player panel.
 const PanelWidth = offX + game.BoardWidth*cellW + 2 // +2 for both border pipes
 
+// pieceColors maps PieceType values (1–7) to standard Tetris Guideline colors.
+// Indexed directly by board.Cell / piece.PieceType (both are uint8, values 1–7).
+// An array is used instead of a switch so the lookup is a single index op, and
+// adding a new piece type is one line here rather than a new case everywhere.
+// Index 0 (board.Empty) is never read; ColorDefault is a safe zero value.
+var pieceColors = [8]tcell.Color{
+	tcell.ColorDefault, // 0 = empty, unused
+	tcell.ColorAqua,    // 1 = I — cyan
+	tcell.ColorYellow,  // 2 = O — yellow
+	tcell.ColorFuchsia, // 3 = T — purple (Fuchsia is the closest named tcell color)
+	tcell.ColorGreen,   // 4 = S — green
+	tcell.ColorRed,     // 5 = Z — red
+	tcell.ColorBlue,    // 6 = J — blue
+	tcell.ColorOrange,  // 7 = L — orange
+}
+
 // Draw renders one player's game state at (originX, originY) on the screen.
 // The caller is responsible for calling s.Clear() before the first Draw and
 // s.Show() after the last Draw in a frame.
@@ -26,7 +42,7 @@ func Draw(s tcell.Screen, st *game.State, originX, originY int) {
 	drawBoard(s, st, originX, originY)
 	drawActive(s, st, originX, originY)
 	drawGhost(s, st, originX, originY)
-	drawScore(s, st, originX, originY)
+	drawSidePanel(s, st, originX, originY)
 }
 
 func boardToScreen(boardRow, boardCol, originX, originY int) (sx, sy int) {
@@ -53,21 +69,24 @@ func drawBorder(s tcell.Screen, originX, originY int) {
 func drawBoard(s tcell.Screen, st *game.State, originX, originY int) {
 	for row := 0; row < game.VisibleRows; row++ {
 		for col := 0; col < game.BoardWidth; col++ {
-			if st.Board.Get(row, col) != board.Empty {
+			cell := st.Board.Get(row, col)
+			if cell != board.Empty {
 				sx, sy := boardToScreen(row, col, originX, originY)
-				drawCell(s, sx, sy, tcell.StyleDefault)
+				style := tcell.StyleDefault.Foreground(pieceColors[cell])
+				drawCell(s, sx, sy, style)
 			}
 		}
 	}
 }
 
 func drawActive(s tcell.Screen, st *game.State, originX, originY int) {
+	style := tcell.StyleDefault.Foreground(pieceColors[st.Active.Type])
 	for _, m := range st.Active.AbsoluteMinoes() {
 		if m.Row >= game.VisibleRows {
 			continue
 		}
 		sx, sy := boardToScreen(m.Row, m.Col, originX, originY)
-		drawCell(s, sx, sy, tcell.StyleDefault)
+		drawCell(s, sx, sy, style)
 	}
 }
 
@@ -78,6 +97,9 @@ func drawGhost(s tcell.Screen, st *game.State, originX, originY int) {
 	}
 	offsets := st.Active.AbsoluteMinoes()
 	dRow := ghostRow - st.Active.PivotRow
+	// Ghost stays gray regardless of piece color: it's a landing guide, not a
+	// colored cell. Matching the piece color would blend with the active piece
+	// and make it harder to read depth at a glance.
 	ghostStyle := tcell.StyleDefault.Foreground(tcell.ColorGray)
 	for _, m := range offsets {
 		r := m.Row + dRow
@@ -89,10 +111,49 @@ func drawGhost(s tcell.Screen, st *game.State, originX, originY int) {
 	}
 }
 
-func drawScore(s tcell.Screen, st *game.State, originX, originY int) {
-	str := fmt.Sprintf("Score: %d  Level: %d  Lines: %d", st.Score, st.Level, st.LinesCleared)
-	sx := originX + offX + game.BoardWidth*cellW + 2
-	for i, ch := range str {
-		s.SetContent(sx+i, originY+offY, ch, nil, tcell.StyleDefault)
+// drawSidePanel renders the right-hand panel: next-piece preview then stats.
+// Layout (rows relative to originY+offY):
+//
+//	0: "NEXT:"
+//	2: next piece (bottom row of the piece in spawn orientation)
+//	1: next piece (top row, for pieces with a second row like T/J/L)
+//	5: score line
+//	6: level line
+//	7: lines-cleared line
+func drawSidePanel(s tcell.Screen, st *game.State, originX, originY int) {
+	// panelX: column where the side panel begins — just past the right border.
+	panelX := originX + offX + game.BoardWidth*cellW + 2
+	topY := originY + offY
+
+	// --- Next-piece preview ---
+	label := "NEXT:"
+	for i, ch := range label {
+		s.SetContent(panelX+i, topY, ch, nil, tcell.StyleDefault)
+	}
+
+	// Render the next piece at its spawn orientation (R0).
+	// The pivot is placed 2 rows below the label so the piece has vertical room.
+	// Board row increases upward, but screen Y increases downward, so:
+	//   screen Y = pivotY - mino.Row
+	// This maps row 0 (bottom of piece) to the pivot line and row 1 to one line above.
+	pivotScreenX := panelX + 3 // center horizontally; I piece (cols -1..2) fits in panelX+1..+7
+	pivotScreenY := topY + 2
+	style := tcell.StyleDefault.Foreground(pieceColors[st.NextPiece])
+	for _, m := range piece.Minoes(st.NextPiece, piece.R0) {
+		sx := pivotScreenX + m.Col*cellW
+		sy := pivotScreenY - m.Row
+		drawCell(s, sx, sy, style)
+	}
+
+	// --- Stats ---
+	stats := []string{
+		fmt.Sprintf("Score: %d", st.Score),
+		fmt.Sprintf("Level: %d", st.Level),
+		fmt.Sprintf("Lines: %d", st.LinesCleared),
+	}
+	for i, line := range stats {
+		for j, ch := range line {
+			s.SetContent(panelX+j, topY+5+i, ch, nil, tcell.StyleDefault)
+		}
 	}
 }
