@@ -2,31 +2,45 @@
 
 Head-to-head networked Tetris with a powerup economy.
 
+## IMPORTANT GLOBAL CONTEXT
+
+This is a *personal learning project*.  The whole point
+is to get better at golang and programming in general, so always
+explain your rationale behind any design decisions before implementing
+in code.
+
 ## Current State
 
 Working single-player Tetris:
+
 - All 7 tetrominoes with correct SRS rotation tables and wall kicks
 - Standard Guideline scoring (100/300/500/800 × level)
 - Level progression every 10 lines
-- Ghost piece rendering
+- Ghost piece rendering (gray, distinct from colored active piece)
+- 7-bag randomizer (`game/bag.go`) — guarantees all 7 types before any repeats
+- Piece colors — standard Guideline palette via `pieceColors` table in renderer
+- Next-piece preview panel to the right of the board
 - Action-based input pipeline decoupled from tcell (ready for powerup filters)
 - Origin-parameterized renderer — two boards side by side is `Draw(s, p1, 0, 0)` + `Draw(s, p2, PanelWidth+gap, 0)`
 - Single lock+spawn path so lock-event hooks fire exactly once per piece
 
 ## Immediate TODOs (single-player complete)
 
-1. **7-bag randomizer** — replace `piece.I` hardcoding with a shuffled bag; expose `NextPiece` on `State` for the preview panel
-2. **Next-piece preview** — render the upcoming piece in the side panel
-3. **Piece colors** — `Cell` already stores `PieceType` (1–7); wire up a color table in the renderer
 4. **Hold piece** — `ActionHold`, one swap per piece, stored on `State`
 5. **Lock delay** — ~500 ms grace window for slides/spins after landing before auto-lock
 
-## Milestone 2: Two-player deathmatch over TCP
+## Milestone 2: Two-player LAN deathmatch
 
 - Two `game.State` objects, one local one remote
 - Serialize/deserialize `State` deltas (lines cleared → garbage rows sent to opponent)
 - Garbage rows: fill a row with a fixed cell color and one random gap
 - Deathmatch: last player alive wins the match
+
+## Side Quest - Serverless matchmaker package
+
+- waiting room frontend
+- NAT traversal for P2P sessions
+- off the shelf?
 
 ## Milestone 3: Rounds mode
 
@@ -45,6 +59,7 @@ Activated via a dedicated key during gameplay; effect applied to self or opponen
 display flip) get callbacks on `State`.
 
 **Powerup ideas:**
+
 - Swap your next piece queue with opponent's
 - Reverse/rotate opponent's input bindings for N pieces
 - Flip or rotate opponent's display
