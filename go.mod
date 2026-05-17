@@ -1,4 +1,4 @@
-module github.com/oldschoolsysadmin/netris
+module github.com/oldschoolsysadmin/fightris
 
 go 1.26.2
 

@@ -1,4 +1,4 @@
-// file: netris/game/piece.go
+// file: fightris/game/piece.go
 
 package piece
 

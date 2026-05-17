@@ -1,4 +1,4 @@
-// file: netris/game/board.go
+// file: fightris/game/board.go
 
 package board
 

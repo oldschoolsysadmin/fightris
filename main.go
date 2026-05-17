@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
-	"github.com/oldschoolsysadmin/netris/game"
-	"github.com/oldschoolsysadmin/netris/game/piece"
-	"github.com/oldschoolsysadmin/netris/render"
+	"github.com/oldschoolsysadmin/fightris/game"
+	"github.com/oldschoolsysadmin/fightris/game/piece"
+	"github.com/oldschoolsysadmin/fightris/render"
 )
 
 func keyToAction(ev *tcell.EventKey) game.Action {

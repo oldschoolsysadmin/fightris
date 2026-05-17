@@ -1,4 +1,4 @@
-# Netris
+# Fightris
 
 Head-to-head networked Tetris with a powerup economy.
 

@@ -1,10 +1,10 @@
-// file: netris/game/state.go
+// file: fightris/game/state.go
 
 package game
 
 import (
-	"github.com/oldschoolsysadmin/netris/game/board"
-	"github.com/oldschoolsysadmin/netris/game/piece"
+	"github.com/oldschoolsysadmin/fightris/game/board"
+	"github.com/oldschoolsysadmin/fightris/game/piece"
 )
 
 const (

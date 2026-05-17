@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/gdamore/tcell/v2"
-	"github.com/oldschoolsysadmin/netris/game"
-	"github.com/oldschoolsysadmin/netris/game/board"
+	"github.com/oldschoolsysadmin/fightris/game"
+	"github.com/oldschoolsysadmin/fightris/game/board"
 )
 
 const (
