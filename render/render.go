@@ -15,15 +15,20 @@ const (
 	cellW = 2 // terminal columns per board column
 )
 
-// PanelWidth is the total terminal columns consumed by one player panel.
-const PanelWidth = offX + game.BoardWidth*cellW + 2 // +2 for both border pipes
+// PanelWidth is the terminal columns consumed by the board + its border.
+// TotalWidth adds the side panel so the caller knows where to place a second board.
+const (
+	PanelWidth     = offX + game.BoardWidth*cellW + 2 // +2 for both border pipes
+	SidePanelWidth = 16
+	TotalWidth     = PanelWidth + SidePanelWidth
+)
 
 // pieceColors maps PieceType values (1–7) to standard Tetris Guideline colors.
 // Indexed directly by board.Cell / piece.PieceType (both are uint8, values 1–7).
 // An array is used instead of a switch so the lookup is a single index op, and
 // adding a new piece type is one line here rather than a new case everywhere.
 // Index 0 (board.Empty) is never read; ColorDefault is a safe zero value.
-var pieceColors = [8]tcell.Color{
+var pieceColors = [9]tcell.Color{
 	tcell.ColorDefault, // 0 = empty, unused
 	tcell.ColorAqua,    // 1 = I — cyan
 	tcell.ColorYellow,  // 2 = O — yellow
@@ -32,6 +37,7 @@ var pieceColors = [8]tcell.Color{
 	tcell.ColorRed,     // 5 = Z — red
 	tcell.ColorBlue,    // 6 = J — blue
 	tcell.ColorOrange,  // 7 = L — orange
+	tcell.ColorGray,    // 8 = garbage rows from opponent
 }
 
 // Draw renders one player's game state at (originX, originY) on the screen.

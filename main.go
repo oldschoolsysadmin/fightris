@@ -162,50 +162,65 @@ func main() {
 		}
 	}()
 
+	// P2's board sits to the right of P1's board + side panel.
+	p2OriginX := render.TotalWidth + 2
+
 	draw := func() {
 		s.Clear()
-		render.Draw(s, st, 0, 0)
+		render.Draw(s, st[0], 0, 0)
+		render.Draw(s, st[1], p2OriginX, 0)
+		// Player labels sit at row 0, above the boards (board starts at row 1).
+		for i, ch := range "P1: WASD+E" {
+			s.SetContent(i, 0, ch, nil, tcell.StyleDefault)
+		}
+		for i, ch := range "P2: Arrows+Space" {
+			s.SetContent(p2OriginX+i, 0, ch, nil, tcell.StyleDefault)
+		}
 		s.Show()
 	}
 
 	draw()
 
+gameLoop:
 	for {
 		switch ev := s.PollEvent().(type) {
 		case *tcell.EventKey:
-			action := keyToAction(ev)
-			if !ih.Handle(action) || st.GameOver {
+			p, action := keyToPlayerAction(ev)
+			if action == game.ActionQuit {
 				return
 			}
+			if action == game.ActionNone || st[p].GameOver {
+				break
+			}
+			ih[p].Handle(action)
 			if action == game.ActionHardDrop {
-				// Hard drop bypasses lock delay — lock immediately.
-				if !lockAndSpawn() {
-					return
+				if !lockAndSpawn(p) {
+					break gameLoop
 				}
 			} else {
-				// After any move or rotate: if the piece is grounded,
-				// start/reset the lock timer; if it moved to a safe height,
-				// cancel any pending lock.
-				if st.IsGrounded() {
-					startLock()
+				if st[p].IsGrounded() {
+					startLock(p)
 				} else {
-					cancelLock()
+					cancelLock(p)
 				}
 			}
 		case *tcell.EventInterrupt:
 			switch data := ev.Data().(type) {
 			case gravityEvent:
-				if !st.MoveDown() {
-					startLock() // piece just landed — begin grace period
-				} else {
-					cancelLock() // piece is falling freely; no lock pending
+				for p := range st {
+					if st[p].GameOver {
+						continue
+					}
+					if !st[p].MoveDown() {
+						startLock(p)
+					} else {
+						cancelLock(p)
+					}
 				}
 			case lockEvent:
-				// A stale event (from a timer that was reset by a player move)
-				// will have an old gen and is simply dropped.
-				if data.gen == lockGen {
-					if !lockAndSpawn() {
-						return
+				if data.gen == lockGen[data.player] && !st[data.player].GameOver {
+					if !lockAndSpawn(data.player) {
+						break gameLoop
 					}
 				}
 			}
@@ -213,5 +228,24 @@ func main() {
 			s.Sync()
 		}
 		draw()
+	}
+
+	// Winner screen: show final board state then overlay the result.
+	draw()
+	if winner >= 0 {
+		msg := fmt.Sprintf(" PLAYER %d WINS! Press any key. ", winner+1)
+		w, h := s.Size()
+		x := (w - len(msg)) / 2
+		y := h / 2
+		style := tcell.StyleDefault.Reverse(true)
+		for i, ch := range msg {
+			s.SetContent(x+i, y, ch, nil, style)
+		}
+		s.Show()
+		for {
+			if _, ok := s.PollEvent().(*tcell.EventKey); ok {
+				break
+			}
+		}
 	}
 }
