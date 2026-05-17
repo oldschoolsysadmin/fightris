@@ -15,13 +15,52 @@ import (
 	"github.com/oldschoolsysadmin/fightris/render"
 )
 
-// gravityEvent is posted by the gravity ticker on each interval.
+// gravityEvent carries the player whose piece should drop one row.
+// Each player has an independent self-rescheduling timer so their gravity
+// speeds diverge naturally as their levels differ.
+//
 // lockEvent carries the player index and a generation counter so stale events
 // (from timers reset by a player move) can be dropped on arrival.
-type gravityEvent struct{}
+type gravityEvent struct{ player int }
 type lockEvent struct{ player, gen int }
 
 const lockDelay = 500 * time.Millisecond
+
+// gravityTable maps level (1-indexed) to the drop interval.
+// Values approximate the Tetris Guideline formula; index 0 is unused.
+var gravityTable = [21]time.Duration{
+	0,
+	800 * time.Millisecond, // 1
+	717 * time.Millisecond, // 2
+	633 * time.Millisecond, // 3
+	550 * time.Millisecond, // 4
+	467 * time.Millisecond, // 5
+	383 * time.Millisecond, // 6
+	300 * time.Millisecond, // 7
+	217 * time.Millisecond, // 8
+	133 * time.Millisecond, // 9
+	100 * time.Millisecond, // 10
+	83 * time.Millisecond,  // 11
+	83 * time.Millisecond,  // 12
+	67 * time.Millisecond,  // 13
+	67 * time.Millisecond,  // 14
+	67 * time.Millisecond,  // 15
+	50 * time.Millisecond,  // 16
+	50 * time.Millisecond,  // 17
+	50 * time.Millisecond,  // 18
+	33 * time.Millisecond,  // 19
+	17 * time.Millisecond,  // 20
+}
+
+func gravityInterval(level int) time.Duration {
+	if level < 1 {
+		level = 1
+	}
+	if level >= len(gravityTable) {
+		level = len(gravityTable) - 1
+	}
+	return gravityTable[level]
+}
 
 // Keymap maps hardware keys and runes to Actions for one player.
 // Rune lookup is case-insensitive (stored lowercase); key lookup is exact.
@@ -146,13 +185,22 @@ func run1P(s tcell.Screen) {
 		return
 	}
 
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
-	go func() {
-		for range ticker.C {
-			s.PostEvent(tcell.NewEventInterrupt(gravityEvent{}))
+	// Self-rescheduling gravity: after each drop, re-read level and multiplier so
+	// both level-ups and powerup effects take hold on the very next tick.
+	var gravityTimer *time.Timer
+	defer func() {
+		if gravityTimer != nil {
+			gravityTimer.Stop()
 		}
 	}()
+	var scheduleGravity func()
+	scheduleGravity = func() {
+		interval := time.Duration(float64(gravityInterval(st.Level)) / st.GravityMultiplier)
+		gravityTimer = time.AfterFunc(interval, func() {
+			s.PostEvent(tcell.NewEventInterrupt(gravityEvent{0}))
+		})
+	}
+	scheduleGravity()
 
 	draw := func() {
 		s.Clear()
@@ -192,6 +240,7 @@ gameLoop:
 				} else {
 					cancelLock()
 				}
+				scheduleGravity()
 			case lockEvent:
 				if data.gen == lockGen {
 					if !lockAndSpawn() {
@@ -265,13 +314,25 @@ func run2P(s tcell.Screen) {
 		}
 	}
 
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
-	go func() {
-		for range ticker.C {
-			s.PostEvent(tcell.NewEventInterrupt(gravityEvent{}))
+	// Independent gravity timers — each player's speed tracks their own level and
+	// GravityMultiplier, so powerups that alter one player's speed don't affect the other.
+	var gravityTimer [2]*time.Timer
+	defer func() {
+		for p := range gravityTimer {
+			if gravityTimer[p] != nil {
+				gravityTimer[p].Stop()
+			}
 		}
 	}()
+	scheduleGravity := func(p int) {
+		interval := time.Duration(float64(gravityInterval(st[p].Level)) / st[p].GravityMultiplier)
+		gravityTimer[p] = time.AfterFunc(interval, func() {
+			s.PostEvent(tcell.NewEventInterrupt(gravityEvent{p}))
+		})
+	}
+	for p := range st {
+		scheduleGravity(p)
+	}
 
 	p2OriginX := render.TotalWidth + 2
 
@@ -315,15 +376,14 @@ gameLoop:
 		case *tcell.EventInterrupt:
 			switch data := ev.Data().(type) {
 			case gravityEvent:
-				for p := range st {
-					if st[p].GameOver {
-						continue
-					}
+				p := data.player
+				if !st[p].GameOver {
 					if !st[p].MoveDown() {
 						startLock(p)
 					} else {
 						cancelLock(p)
 					}
+					scheduleGravity(p)
 				}
 			case lockEvent:
 				if data.gen == lockGen[data.player] && !st[data.player].GameOver {

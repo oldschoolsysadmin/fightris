@@ -28,6 +28,11 @@ type State struct {
 	Level        int
 	GameOver     bool
 
+	// GravityMultiplier scales the level-based drop interval: >1.0 = faster, <1.0 = slower.
+	// Kept on State (not in the event loop) so powerups can set it per-player via normal
+	// State mutation, the same way they would set any other game parameter.
+	GravityMultiplier float64
+
 	// bag is private: callers read NextPiece instead of reaching into the bag directly.
 	// This keeps State as the single source of truth the renderer and game loop talk to.
 	bag *Bag
@@ -38,10 +43,11 @@ type State struct {
 func New() *State {
 	bag := NewBag()
 	return &State{
-		Board:     board.New(BoardWidth, BoardHeight),
-		Level:     1,
-		bag:       bag,
-		NextPiece: bag.Next(), // seed the preview before the first spawn
+		Board:             board.New(BoardWidth, BoardHeight),
+		Level:             1,
+		GravityMultiplier: 1.0,
+		bag:               bag,
+		NextPiece:         bag.Next(), // seed the preview before the first spawn
 	}
 }
 
