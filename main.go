@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 	"time"
 	"unicode"
 
@@ -42,7 +43,7 @@ func (km Keymap) Lookup(ev *tcell.EventKey) game.Action {
 }
 
 var (
-	// P1: WASD cluster — W=rotateCW, A=left, S=softDrop, D=right, E=hardDrop
+	// p1Keys: WASD cluster — W=rotateCW, A=left, S=softDrop, D=right, E=hardDrop
 	p1Keys = Keymap{
 		keys: map[tcell.Key]game.Action{},
 		runes: map[rune]game.Action{
@@ -54,7 +55,7 @@ var (
 		},
 	}
 
-	// P2: arrow keys + space=hardDrop
+	// p2Keys: arrow keys + space=hardDrop
 	p2Keys = Keymap{
 		keys: map[tcell.Key]game.Action{
 			tcell.KeyLeft:  game.ActionLeft,
@@ -88,16 +89,129 @@ func keyToPlayerAction(ev *tcell.EventKey) (int, game.Action) {
 // Standard Tetris vs. table: 1→0, 2→1, 3→2, 4→4.
 var garbageRows = [5]int{0, 0, 1, 2, 4}
 
-func main() {
-	s, err := tcell.NewScreen()
-	if err != nil {
-		log.Fatal(err)
+func showOverlay(s tcell.Screen, msg string) {
+	w, h := s.Size()
+	x := (w - len(msg)) / 2
+	y := h / 2
+	style := tcell.StyleDefault.Reverse(true)
+	for i, ch := range msg {
+		s.SetContent(x+i, y, ch, nil, style)
 	}
-	if err := s.Init(); err != nil {
-		log.Fatal(err)
+	s.Show()
+	for {
+		if _, ok := s.PollEvent().(*tcell.EventKey); ok {
+			return
+		}
 	}
-	defer s.Fini()
+}
 
+func run1P(s tcell.Screen) {
+	st := game.New()
+	ih := game.NewInputHandler(st)
+
+	var lockTimer *time.Timer
+	lockGen := 0
+
+	startLock := func() {
+		lockGen++
+		gen := lockGen
+		if lockTimer != nil {
+			lockTimer.Stop()
+		}
+		lockTimer = time.AfterFunc(lockDelay, func() {
+			s.PostEvent(tcell.NewEventInterrupt(lockEvent{0, gen}))
+		})
+	}
+
+	cancelLock := func() {
+		if lockTimer != nil {
+			lockTimer.Stop()
+			lockTimer = nil
+		}
+		lockGen++
+	}
+
+	gameOver := false
+	lockAndSpawn := func() bool {
+		st.LockActive()
+		cancelLock()
+		if !st.SpawnNext() {
+			gameOver = true
+			return false
+		}
+		return true
+	}
+
+	if !st.SpawnNext() {
+		return
+	}
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	go func() {
+		for range ticker.C {
+			s.PostEvent(tcell.NewEventInterrupt(gravityEvent{}))
+		}
+	}()
+
+	draw := func() {
+		s.Clear()
+		render.Draw(s, st, 0, 0)
+		s.Show()
+	}
+	draw()
+
+gameLoop:
+	for {
+		switch ev := s.PollEvent().(type) {
+		case *tcell.EventKey:
+			if ev.Key() == tcell.KeyEscape || ev.Key() == tcell.KeyCtrlC {
+				return
+			}
+			action := p2Keys.Lookup(ev) // arrows + space
+			if action == game.ActionNone || st.GameOver {
+				break
+			}
+			ih.Handle(action)
+			if action == game.ActionHardDrop {
+				if !lockAndSpawn() {
+					break gameLoop
+				}
+			} else {
+				if st.IsGrounded() {
+					startLock()
+				} else {
+					cancelLock()
+				}
+			}
+		case *tcell.EventInterrupt:
+			switch data := ev.Data().(type) {
+			case gravityEvent:
+				if !st.MoveDown() {
+					startLock()
+				} else {
+					cancelLock()
+				}
+			case lockEvent:
+				if data.gen == lockGen {
+					if !lockAndSpawn() {
+						break gameLoop
+					}
+				}
+			}
+		case *tcell.EventResize:
+			s.Sync()
+		}
+		draw()
+	}
+
+	draw()
+	if gameOver {
+		showOverlay(s, " GAME OVER  Press any key. ")
+	}
+}
+
+func run2P(s tcell.Screen) {
 	st := [2]*game.State{game.New(), game.New()}
 	ih := [2]*game.InputHandler{game.NewInputHandler(st[0]), game.NewInputHandler(st[1])}
 
@@ -120,13 +234,11 @@ func main() {
 			lockTimer[p].Stop()
 			lockTimer[p] = nil
 		}
-		lockGen[p]++ // invalidate any in-flight lock event for this player
+		lockGen[p]++
 	}
 
-	winner := -1 // -1 = no winner yet; 0 or 1 = that player won
+	winner := -1
 
-	// lockAndSpawn locks p's active piece, sends garbage to the opponent if lines
-	// were cleared, then spawns p's next piece. Returns false when the game ends.
 	lockAndSpawn := func(p int) bool {
 		cleared := st[p].LockActive()
 		cancelLock(p)
@@ -153,7 +265,6 @@ func main() {
 		}
 	}
 
-	// One shared gravity ticker — both boards fall at the same rate.
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 	go func() {
@@ -162,14 +273,12 @@ func main() {
 		}
 	}()
 
-	// P2's board sits to the right of P1's board + side panel.
 	p2OriginX := render.TotalWidth + 2
 
 	draw := func() {
 		s.Clear()
 		render.Draw(s, st[0], 0, 0)
 		render.Draw(s, st[1], p2OriginX, 0)
-		// Player labels sit at row 0, above the boards (board starts at row 1).
 		for i, ch := range "P1: WASD+E" {
 			s.SetContent(i, 0, ch, nil, tcell.StyleDefault)
 		}
@@ -178,7 +287,6 @@ func main() {
 		}
 		s.Show()
 	}
-
 	draw()
 
 gameLoop:
@@ -230,22 +338,30 @@ gameLoop:
 		draw()
 	}
 
-	// Winner screen: show final board state then overlay the result.
 	draw()
 	if winner >= 0 {
-		msg := fmt.Sprintf(" PLAYER %d WINS! Press any key. ", winner+1)
-		w, h := s.Size()
-		x := (w - len(msg)) / 2
-		y := h / 2
-		style := tcell.StyleDefault.Reverse(true)
-		for i, ch := range msg {
-			s.SetContent(x+i, y, ch, nil, style)
-		}
-		s.Show()
-		for {
-			if _, ok := s.PollEvent().(*tcell.EventKey); ok {
-				break
-			}
-		}
+		showOverlay(s, fmt.Sprintf(" PLAYER %d WINS!  Press any key. ", winner+1))
+	}
+}
+
+func main() {
+	if len(os.Args) < 2 || (os.Args[1] != "-1p" && os.Args[1] != "-2p") {
+		fmt.Fprintln(os.Stderr, "usage: fightris -1p | -2p")
+		os.Exit(1)
+	}
+
+	s, err := tcell.NewScreen()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := s.Init(); err != nil {
+		log.Fatal(err)
+	}
+	defer s.Fini()
+
+	if os.Args[1] == "-1p" {
+		run1P(s)
+	} else {
+		run2P(s)
 	}
 }
