@@ -4,8 +4,10 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"time"
+	"unicode"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/oldschoolsysadmin/fightris/game"
@@ -13,41 +15,73 @@ import (
 )
 
 // gravityEvent is posted by the gravity ticker on each interval.
-// lockEvent is posted by the lock-delay timer; gen must match the current
-// lock generation or the event is stale and should be ignored.
-//
-// Using typed structs as EventInterrupt payloads lets the event loop
-// type-switch on them cleanly instead of comparing magic strings or
-// trying to maintain separate channels.
+// lockEvent carries the player index and a generation counter so stale events
+// (from timers reset by a player move) can be dropped on arrival.
 type gravityEvent struct{}
-type lockEvent struct{ gen int }
+type lockEvent struct{ player, gen int }
 
 const lockDelay = 500 * time.Millisecond
 
-func keyToAction(ev *tcell.EventKey) game.Action {
-	switch ev.Key() {
-	case tcell.KeyLeft:
-		return game.ActionLeft
-	case tcell.KeyRight:
-		return game.ActionRight
-	case tcell.KeyDown:
-		return game.ActionSoftDrop
-	case tcell.KeyUp:
-		return game.ActionRotateCW
-	case tcell.KeyEscape, tcell.KeyCtrlC:
-		return game.ActionQuit
+// Keymap maps hardware keys and runes to Actions for one player.
+// Rune lookup is case-insensitive (stored lowercase); key lookup is exact.
+type Keymap struct {
+	keys  map[tcell.Key]game.Action
+	runes map[rune]game.Action
+}
+
+func (km Keymap) Lookup(ev *tcell.EventKey) game.Action {
+	if a, ok := km.keys[ev.Key()]; ok {
+		return a
 	}
-	switch ev.Rune() {
-	case ' ':
-		return game.ActionHardDrop
-	case 'z', 'Z':
-		return game.ActionRotateCCW
-	case 'x', 'X':
-		return game.ActionRotateCW
-	case 'q', 'Q':
-		return game.ActionQuit
+	if ev.Key() == tcell.KeyRune {
+		if a, ok := km.runes[unicode.ToLower(ev.Rune())]; ok {
+			return a
+		}
 	}
 	return game.ActionNone
+}
+
+var (
+	// P1: WASD cluster — W=rotateCW, A=left, S=softDrop, D=right, E=hardDrop
+	p1Keys = Keymap{
+		keys: map[tcell.Key]game.Action{},
+		runes: map[rune]game.Action{
+			'a': game.ActionLeft,
+			'd': game.ActionRight,
+			's': game.ActionSoftDrop,
+			'w': game.ActionRotateCW,
+			'e': game.ActionHardDrop,
+		},
+	}
+
+	// P2: arrow keys + space=hardDrop
+	p2Keys = Keymap{
+		keys: map[tcell.Key]game.Action{
+			tcell.KeyLeft:  game.ActionLeft,
+			tcell.KeyRight: game.ActionRight,
+			tcell.KeyDown:  game.ActionSoftDrop,
+			tcell.KeyUp:    game.ActionRotateCW,
+		},
+		runes: map[rune]game.Action{
+			' ': game.ActionHardDrop,
+		},
+	}
+)
+
+// keyToPlayerAction returns which player (0 or 1) pressed what Action.
+// Escape and Ctrl-C are a global quit regardless of player.
+func keyToPlayerAction(ev *tcell.EventKey) (int, game.Action) {
+	switch ev.Key() {
+	case tcell.KeyEscape, tcell.KeyCtrlC:
+		return 0, game.ActionQuit
+	}
+	if a := p1Keys.Lookup(ev); a != game.ActionNone {
+		return 0, a
+	}
+	if a := p2Keys.Lookup(ev); a != game.ActionNone {
+		return 1, a
+	}
+	return 0, game.ActionNone
 }
 
 func main() {

@@ -10,13 +10,10 @@ const (
 	ActionSoftDrop
 	ActionHardDrop
 	ActionRotateCW
-	ActionRotateCCW
 	ActionQuit
 )
 
 // InputHandler applies Actions to State.
-// To add weapon plugins later: introduce a Filter func(Action) Action type and
-// run the action through a []Filter pipeline here before the switch below.
 type InputHandler struct {
 	state *State
 }
@@ -25,9 +22,8 @@ func NewInputHandler(state *State) *InputHandler {
 	return &InputHandler{state: state}
 }
 
-// Handle applies the action to the game state.
-// Returns false if the game should end.
-func (h *InputHandler) Handle(a Action) bool {
+// Handle applies the action to the game state. Quit is handled by the caller.
+func (h *InputHandler) Handle(a Action) {
 	switch a {
 	case ActionLeft:
 		h.state.MoveLeft()
@@ -39,10 +35,5 @@ func (h *InputHandler) Handle(a Action) bool {
 		h.state.HardDrop()
 	case ActionRotateCW:
 		h.state.RotateCW()
-	case ActionRotateCCW:
-		h.state.RotateCCW()
-	case ActionQuit:
-		return false
 	}
-	return true
 }
