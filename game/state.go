@@ -3,6 +3,8 @@
 package game
 
 import (
+	"math/rand"
+
 	"github.com/oldschoolsysadmin/fightris/game/board"
 	"github.com/oldschoolsysadmin/fightris/game/piece"
 )
@@ -161,6 +163,40 @@ func (s *State) tryRotate(rotated piece.Active) bool {
 		}
 	}
 	return false
+}
+
+// -- Garbage -------------------------------------------------------------
+
+// AddGarbage pushes n solid rows from the bottom, shifting all locked content up.
+// Each garbage row is fully filled except one random hole column (same column for
+// the whole attack, giving the receiver a consistent escape route). Returns false
+// — and sets GameOver — if the active piece ends up colliding after the push.
+func (s *State) AddGarbage(n int) bool {
+	if n <= 0 {
+		return true
+	}
+	// Shift every row up by n, dropping whatever overflows the top.
+	for row := s.Board.Height - 1; row >= n; row-- {
+		for col := 0; col < s.Board.Width; col++ {
+			s.Board.Set(row, col, s.Board.Get(row-n, col))
+		}
+	}
+	// Fill the bottom n rows with garbage; one column left open as escape.
+	hole := rand.Intn(s.Board.Width)
+	for row := 0; row < n; row++ {
+		for col := 0; col < s.Board.Width; col++ {
+			if col == hole {
+				s.Board.Set(row, col, board.Empty)
+			} else {
+				s.Board.Set(row, col, board.Garbage)
+			}
+		}
+	}
+	if s.collides(s.Active) {
+		s.GameOver = true
+		return false
+	}
+	return true
 }
 
 // -- Ghost Piece ---------------------------------------------------------

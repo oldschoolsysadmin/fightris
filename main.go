@@ -84,6 +84,10 @@ func keyToPlayerAction(ev *tcell.EventKey) (int, game.Action) {
 	return 0, game.ActionNone
 }
 
+// garbageRows[n] = garbage lines sent to the opponent when n lines are cleared.
+// Standard Tetris vs. table: 1→0, 2→1, 3→2, 4→4.
+var garbageRows = [5]int{0, 0, 1, 2, 4}
+
 func main() {
 	s, err := tcell.NewScreen()
 	if err != nil {
@@ -94,52 +98,62 @@ func main() {
 	}
 	defer s.Fini()
 
-	st := game.New()
-	ih := game.NewInputHandler(st)
+	st := [2]*game.State{game.New(), game.New()}
+	ih := [2]*game.InputHandler{game.NewInputHandler(st[0]), game.NewInputHandler(st[1])}
 
-	// Lock-delay state — lives here, not in game.State, because timing is an
-	// I/O concern; game.State is pure game logic with no awareness of time.
-	var lockTimer *time.Timer
-	lockGen := 0
+	var lockTimer [2]*time.Timer
+	lockGen := [2]int{}
 
-	// startLock begins (or resets) the lock-delay grace period.
-	// Bumping lockGen before capturing it in the closure means any lock event
-	// already in the queue carries an old gen and will be ignored.
-	startLock := func() {
-		lockGen++
-		gen := lockGen
-		if lockTimer != nil {
-			lockTimer.Stop()
+	startLock := func(p int) {
+		lockGen[p]++
+		gen := lockGen[p]
+		if lockTimer[p] != nil {
+			lockTimer[p].Stop()
 		}
-		lockTimer = time.AfterFunc(lockDelay, func() {
-			s.PostEvent(tcell.NewEventInterrupt(lockEvent{gen}))
+		lockTimer[p] = time.AfterFunc(lockDelay, func() {
+			s.PostEvent(tcell.NewEventInterrupt(lockEvent{p, gen}))
 		})
 	}
 
-	// cancelLock stops any pending lock timer and invalidates in-flight events.
-	cancelLock := func() {
-		if lockTimer != nil {
-			lockTimer.Stop()
-			lockTimer = nil
+	cancelLock := func(p int) {
+		if lockTimer[p] != nil {
+			lockTimer[p].Stop()
+			lockTimer[p] = nil
 		}
-		lockGen++ // stale lock events in the queue will see gen != lockGen and be dropped
+		lockGen[p]++ // invalidate any in-flight lock event for this player
 	}
 
-	// lockAndSpawn is the single path for locking a placed piece and spawning
-	// the next one. Both the lock-delay timer and hard drop converge here so
-	// lock-event hooks fire exactly once per piece.
-	lockAndSpawn := func() bool {
-		st.LockActive()
-		cancelLock() // reset lock state for the incoming piece
-		return st.SpawnNext()
+	winner := -1 // -1 = no winner yet; 0 or 1 = that player won
+
+	// lockAndSpawn locks p's active piece, sends garbage to the opponent if lines
+	// were cleared, then spawns p's next piece. Returns false when the game ends.
+	lockAndSpawn := func(p int) bool {
+		cleared := st[p].LockActive()
+		cancelLock(p)
+		if cleared > 0 {
+			opp := 1 - p
+			if g := garbageRows[min(cleared, 4)]; g > 0 && !st[opp].GameOver {
+				st[opp].AddGarbage(g)
+				if st[opp].GameOver {
+					winner = p
+					return false
+				}
+			}
+		}
+		if !st[p].SpawnNext() {
+			winner = 1 - p
+			return false
+		}
+		return true
 	}
 
-	if !st.SpawnNext() {
-		return
+	for p := range st {
+		if !st[p].SpawnNext() {
+			return
+		}
 	}
 
-	// Gravity ticker — posts gravityEvent so the loop can distinguish it from
-	// lock events via type switch on the EventInterrupt payload.
+	// One shared gravity ticker — both boards fall at the same rate.
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 	go func() {

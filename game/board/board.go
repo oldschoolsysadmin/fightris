@@ -7,7 +7,8 @@ package board
 type Cell uint8
 
 const (
-	Empty Cell = 0
+	Empty   Cell = 0
+	Garbage Cell = 8 // garbage rows sent by the opponent; rendered gray
 )
 
 // Board is row 0 = bottom, row (Height-1) = top.
