@@ -20,18 +20,26 @@ const (
 type State struct {
 	Board        *board.Board
 	Active       piece.Active
+	NextPiece    piece.PieceType // the piece that will spawn after Active locks; read by the renderer
 	Score        int
 	LinesCleared int
 	Level        int
 	GameOver     bool
+
+	// bag is private: callers read NextPiece instead of reaching into the bag directly.
+	// This keeps State as the single source of truth the renderer and game loop talk to.
+	bag *Bag
 }
 
 // New creates a fresh game state with an empty board and no active piece.
-// Call SpawnPiece before starting the loop.
+// Call SpawnNext before starting the loop.
 func New() *State {
+	bag := NewBag()
 	return &State{
-		Board: board.New(BoardWidth, BoardHeight),
-		Level: 1,
+		Board:     board.New(BoardWidth, BoardHeight),
+		Level:     1,
+		bag:       bag,
+		NextPiece: bag.Next(), // seed the preview before the first spawn
 	}
 }
 
@@ -53,15 +61,17 @@ func (s *State) collides(a piece.Active) bool {
 
 // -- Piece Lifecycle -----------------------------------------------------
 
-// SpawnPiece places a new piece at the spawn position.
-// Returns false (and sets GameOver) if the spawn position is already blocked.
-func (s *State) SpawnPiece(pt piece.PieceType) bool {
-	a := piece.NewActive(pt, SpawnRow, SpawnCol)
+// SpawnNext promotes NextPiece to the active piece, then draws the following
+// piece from the bag so the preview is always one ahead.
+// Returns false (and sets GameOver) if the spawn position is blocked — game over.
+func (s *State) SpawnNext() bool {
+	a := piece.NewActive(s.NextPiece, SpawnRow, SpawnCol)
 	if s.collides(a) {
 		s.GameOver = true
 		return false
 	}
 	s.Active = a
+	s.NextPiece = s.bag.Next() // draw the upcoming piece so NextPiece is always "what's after Active"
 	return true
 }
 

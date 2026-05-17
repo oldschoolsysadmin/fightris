@@ -9,7 +9,6 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/oldschoolsysadmin/fightris/game"
-	"github.com/oldschoolsysadmin/fightris/game/piece"
 	"github.com/oldschoolsysadmin/fightris/render"
 )
 
@@ -57,10 +56,10 @@ func main() {
 	// so lock-event hooks fire exactly once per piece.
 	lockAndSpawn := func() bool {
 		st.LockActive()
-		return st.SpawnPiece(piece.I) // TODO: replace piece.I with bag randomizer
+		return st.SpawnNext()
 	}
 
-	if !st.SpawnPiece(piece.I) {
+	if !st.SpawnNext() {
 		return
 	}
 

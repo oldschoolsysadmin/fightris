@@ -6,6 +6,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/oldschoolsysadmin/fightris/game"
 	"github.com/oldschoolsysadmin/fightris/game/board"
+	"github.com/oldschoolsysadmin/fightris/game/piece"
 )
 
 const (
