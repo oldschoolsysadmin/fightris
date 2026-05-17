@@ -82,10 +82,10 @@ var rotationTable = map[PieceType][4][]Mino{
 		{{-1, -1}, {-1, 0}, {0, 0}, {1, 0}},// R270
 	},
 	L: {
-		{{0, -1}, {0, 0}, {0, 1}, {1, 1}},  // R0  — flat with right stub up
-		{{-1, 0}, {0, 0}, {1, 0}, {1, -1}}, // R90 — actually bottom-left foot
-		{{-1, -1}, {-1, 0}, {0, -1}, {0, 0}}, // R180 — wait, let's keep it readable:
-		{{-1, 1}, {-1, 0}, {0, 0}, {1, 0}}, // R270
+		{{0, -1}, {0, 0}, {0, 1}, {1, 1}},   // R0   — bar + top-right foot
+		{{-1, 0}, {0, 0}, {1, 0}, {1, -1}},  // R90  — column + top-left foot
+		{{-1, -1}, {0, -1}, {0, 0}, {0, 1}}, // R180 — bar + bottom-left foot
+		{{-1, 1}, {-1, 0}, {0, 0}, {1, 0}},  // R270 — column + bottom-right foot
 	},
 }
 
