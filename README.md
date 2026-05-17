@@ -4,10 +4,9 @@ Head-to-head networked Tetris with a powerup economy.
 
 ## IMPORTANT GLOBAL CONTEXT
 
-This is a *personal learning project*.  The whole point
-is to get better at golang and programming in general, so always
-explain your rationale behind any design decisions before implementing
-in code.
+This is a *personal learning project*.  The whole point is to get
+better at golang and programming in general, so always explain your
+rationale behind any design decisions before implementing in code.
 
 ## Current State
 
@@ -21,13 +20,19 @@ Working single-player Tetris:
 - Piece colors — standard Guideline palette via `pieceColors` table in renderer
 - Next-piece preview panel to the right of the board
 - Action-based input pipeline decoupled from tcell (ready for powerup filters)
-- Origin-parameterized renderer — two boards side by side is `Draw(s, p1, 0, 0)` + `Draw(s, p2, PanelWidth+gap, 0)`
+- Origin-parameterized renderer — two boards side by side is
+  `Draw(s, p1, 0, 0)` + `Draw(s, p2, PanelWidth+gap, 0)`
 - Single lock+spawn path so lock-event hooks fire exactly once per piece
 
 ## Immediate TODOs (single-player complete)
 
-4. **Hold piece** — `ActionHold`, one swap per piece, stored on `State`
-5. **Lock delay** — ~500 ms grace window for slides/spins after landing before auto-lock
+1. **Lock delay** — ~500 ms grace window for slides/spins after landing before auto-lock
+2. QOL: keybinding configfile
+
+## Side Quest - Two Players, One Terminal
+
+- 😒
+- One player has wasd, the other has arrows.
 
 ## Milestone 2: Two-player LAN deathmatch
 
@@ -66,6 +71,7 @@ display flip) get callbacks on `State`.
 - Opponent's active piece auto-rotates one step per gravity tick
 - Force yourself an I piece next
 - User-defined plugins (mod API TBD)
+- Standard Tetris Hold implementation
 
 ## Architecture Notes
 
