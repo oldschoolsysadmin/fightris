@@ -23,11 +23,12 @@ Working single-player Tetris:
 - Origin-parameterized renderer — two boards side by side is
   `Draw(s, p1, 0, 0)` + `Draw(s, p2, PanelWidth+gap, 0)`
 - Single lock+spawn path so lock-event hooks fire exactly once per piece
+- Lock delay — 500ms grace window after landing; any move/rotate resets the timer
+  (no 15-reset Guideline cap yet); hard drop still locks instantly
 
 ## Immediate TODOs (single-player complete)
 
-1. **Lock delay** — ~500 ms grace window for slides/spins after landing before auto-lock
-2. QOL: keybinding configfile
+1. QOL: keybinding configfile
 
 ## Side Quest - Two Players, One Terminal
 

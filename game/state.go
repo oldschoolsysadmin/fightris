@@ -91,6 +91,13 @@ func (s *State) LockActive() int {
 
 // -- Movement ------------------------------------------------------------
 
+// IsGrounded returns true when the active piece can no longer move down.
+// Used by the main loop to decide when to start the lock-delay timer —
+// kept here because State owns all collision logic.
+func (s *State) IsGrounded() bool {
+	return s.collides(s.Active.Moved(-1, 0))
+}
+
 // MoveLeft attempts to shift the active piece one column left.
 // Returns true if the move succeeded.
 func (s *State) MoveLeft() bool {
