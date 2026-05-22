@@ -50,9 +50,26 @@ Working two-player local versus mode:
 
 ## Side Quest - Serverless matchmaker package
 
-- NAT traversal for P2P sessions
-- off the shelf?
-- geek-only one-shot delete-after-use AWS deploy package ("just provide your IPs")
+Geek-only, one-shot AWS deploy: spin up, play, auto-teardown. Two options:
+
+**Option A: Lambda signaling + UDP hole punching**
+- API Gateway + Lambda acts as a one-time rendezvous: each player posts their public
+  IP/port (Lambda can read it from the request), fetches the peer's, then both attempt
+  UDP hole punching simultaneously
+- Cost: $0 (free tier); deploys with `cdk deploy`, cleans up via TTL
+- Limitation: fails on symmetric NATs (CGNAT, some corporate routers) — fine for
+  "two geeks who know their setup", not universally reliable
+
+**Option B: EC2 t4g.nano TURN relay**
+- One-command CloudFormation stack spins up a tiny instance running `coturn`
+- All game traffic relays through it — works against any NAT type
+- Cost: ~$0.004/hr; terminate the stack when the session ends
+- More infrastructure, but bulletproof
+
+**UX sketch (both options):**
+- `fightris -host` — deploys the stack, prints a short join code for the other player
+- `fightris -join <code>` — fetches peer address, connects
+- Stack tears itself down on game end (or timeout)
 
 ## Milestone 3: Rounds mode
 
