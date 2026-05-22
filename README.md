@@ -45,7 +45,12 @@ Working two-player local versus mode:
 ## Milestone 2: Two-player LAN deathmatch
 
 - Two `game.State` objects, one local one remote
+- Protocol: UDP from day one — LAN is direct, internet (Side Quest) just adds a
+  connection-establishment step on top of the same protocol
 - Serialize/deserialize `State` deltas (lines cleared → garbage rows sent to opponent)
+- Reliability: send N redundant copies of each packet; receiver deduplicates by payload ID.
+  No ACK/retransmit needed. A `--spam N` flag (default 1, crank up on lossy links) controls
+  redundancy.
 - Deathmatch: last player alive wins the match
 
 ## Side Quest - Serverless matchmaker package
