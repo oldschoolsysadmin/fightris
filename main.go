@@ -7,60 +7,17 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"time"
 	"unicode"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/oldschoolsysadmin/fightris/engine"
 	"github.com/oldschoolsysadmin/fightris/game"
 	"github.com/oldschoolsysadmin/fightris/render"
 )
 
-// gravityEvent carries the player whose piece should drop one row.
-// Each player has an independent self-rescheduling timer so their gravity
-// speeds diverge naturally as their levels differ.
-//
-// lockEvent carries the player index and a generation counter so stale events
-// (from timers reset by a player move) can be dropped on arrival.
-type gravityEvent struct{ player int }
-type lockEvent struct{ player, gen int }
-
-const lockDelay = 500 * time.Millisecond
-
-// gravityTable maps level (1-indexed) to the drop interval.
-// Values approximate the Tetris Guideline formula; index 0 is unused.
-var gravityTable = [21]time.Duration{
-	0,
-	800 * time.Millisecond, // 1
-	717 * time.Millisecond, // 2
-	633 * time.Millisecond, // 3
-	550 * time.Millisecond, // 4
-	467 * time.Millisecond, // 5
-	383 * time.Millisecond, // 6
-	300 * time.Millisecond, // 7
-	217 * time.Millisecond, // 8
-	133 * time.Millisecond, // 9
-	100 * time.Millisecond, // 10
-	83 * time.Millisecond,  // 11
-	83 * time.Millisecond,  // 12
-	67 * time.Millisecond,  // 13
-	67 * time.Millisecond,  // 14
-	67 * time.Millisecond,  // 15
-	50 * time.Millisecond,  // 16
-	50 * time.Millisecond,  // 17
-	50 * time.Millisecond,  // 18
-	33 * time.Millisecond,  // 19
-	17 * time.Millisecond,  // 20
-}
-
-func gravityInterval(level int) time.Duration {
-	if level < 1 {
-		level = 1
-	}
-	if level >= len(gravityTable) {
-		level = len(gravityTable) - 1
-	}
-	return gravityTable[level]
-}
+// garbageRows[n] = garbage lines sent to the opponent when n lines are cleared.
+// Standard Tetris vs. table: 1→0, 2→1, 3→2, 4→4.
+var garbageRows = [5]int{0, 0, 1, 2, 4}
 
 // Keymap maps hardware keys and runes to Actions for one player.
 // Rune lookup is case-insensitive (stored lowercase); key lookup is exact.
@@ -124,10 +81,6 @@ func keyToPlayerAction(ev *tcell.EventKey) (int, game.Action) {
 	return 0, game.ActionNone
 }
 
-// garbageRows[n] = garbage lines sent to the opponent when n lines are cleared.
-// Standard Tetris vs. table: 1→0, 2→1, 3→2, 4→4.
-var garbageRows = [5]int{0, 0, 1, 2, 4}
-
 func showOverlay(s tcell.Screen, msg string) {
 	w, h := s.Size()
 	x := (w - len(msg)) / 2
@@ -145,66 +98,15 @@ func showOverlay(s tcell.Screen, msg string) {
 }
 
 func run1P(s tcell.Screen) {
-	st := game.New()
-	ih := game.NewInputHandler(st)
-
-	var lockTimer *time.Timer
-	lockGen := 0
-
-	startLock := func() {
-		lockGen++
-		gen := lockGen
-		if lockTimer != nil {
-			lockTimer.Stop()
-		}
-		lockTimer = time.AfterFunc(lockDelay, func() {
-			s.PostEvent(tcell.NewEventInterrupt(lockEvent{0, gen}))
-		})
-	}
-
-	cancelLock := func() {
-		if lockTimer != nil {
-			lockTimer.Stop()
-			lockTimer = nil
-		}
-		lockGen++
-	}
-
-	gameOver := false
-	lockAndSpawn := func() bool {
-		st.LockActive()
-		cancelLock()
-		if !st.SpawnNext() {
-			gameOver = true
-			return false
-		}
-		return true
-	}
-
-	if !st.SpawnNext() {
+	eng := engine.New(s, 0)
+	defer eng.Stop()
+	if !eng.Start() {
 		return
 	}
 
-	// Self-rescheduling gravity: after each drop, re-read level and multiplier so
-	// both level-ups and powerup effects take hold on the very next tick.
-	var gravityTimer *time.Timer
-	defer func() {
-		if gravityTimer != nil {
-			gravityTimer.Stop()
-		}
-	}()
-	var scheduleGravity func()
-	scheduleGravity = func() {
-		interval := time.Duration(float64(gravityInterval(st.Level)) / st.GravityMultiplier)
-		gravityTimer = time.AfterFunc(interval, func() {
-			s.PostEvent(tcell.NewEventInterrupt(gravityEvent{0}))
-		})
-	}
-	scheduleGravity()
-
 	draw := func() {
 		s.Clear()
-		render.Draw(s, st, 0, 0)
+		render.Draw(s, eng.State, 0, 0)
 		s.Show()
 	}
 	draw()
@@ -217,35 +119,19 @@ gameLoop:
 				return
 			}
 			action := p2Keys.Lookup(ev) // arrows + space
-			if action == game.ActionNone || st.GameOver {
+			if action == game.ActionNone || eng.State.GameOver {
 				break
 			}
-			ih.Handle(action)
-			if action == game.ActionHardDrop {
-				if !lockAndSpawn() {
-					break gameLoop
-				}
-			} else {
-				if st.IsGrounded() {
-					startLock()
-				} else {
-					cancelLock()
-				}
+			if _, alive := eng.HandleAction(action); !alive {
+				break gameLoop
 			}
 		case *tcell.EventInterrupt:
 			switch data := ev.Data().(type) {
-			case gravityEvent:
-				if !st.MoveDown() {
-					startLock()
-				} else {
-					cancelLock()
-				}
-				scheduleGravity()
-			case lockEvent:
-				if data.gen == lockGen {
-					if !lockAndSpawn() {
-						break gameLoop
-					}
+			case engine.GravityEvent:
+				eng.HandleGravity()
+			case engine.LockEvent:
+				if _, alive := eng.HandleLock(data.Gen); !alive {
+					break gameLoop
 				}
 			}
 		case *tcell.EventResize:
@@ -255,91 +141,29 @@ gameLoop:
 	}
 
 	draw()
-	if gameOver {
-		showOverlay(s, " GAME OVER  Press any key. ")
-	}
+	showOverlay(s, " GAME OVER  Press any key. ")
 }
 
 func run2P(s tcell.Screen) {
-	st := [2]*game.State{game.New(), game.New()}
-	ih := [2]*game.InputHandler{game.NewInputHandler(st[0]), game.NewInputHandler(st[1])}
-
-	var lockTimer [2]*time.Timer
-	lockGen := [2]int{}
-
-	startLock := func(p int) {
-		lockGen[p]++
-		gen := lockGen[p]
-		if lockTimer[p] != nil {
-			lockTimer[p].Stop()
-		}
-		lockTimer[p] = time.AfterFunc(lockDelay, func() {
-			s.PostEvent(tcell.NewEventInterrupt(lockEvent{p, gen}))
-		})
+	eng := [2]*engine.GameEngine{
+		engine.New(s, 0),
+		engine.New(s, 1),
 	}
+	defer eng[0].Stop()
+	defer eng[1].Stop()
 
-	cancelLock := func(p int) {
-		if lockTimer[p] != nil {
-			lockTimer[p].Stop()
-			lockTimer[p] = nil
-		}
-		lockGen[p]++
-	}
-
-	winner := -1
-
-	lockAndSpawn := func(p int) bool {
-		cleared := st[p].LockActive()
-		cancelLock(p)
-		if cleared > 0 {
-			opp := 1 - p
-			if g := garbageRows[min(cleared, 4)]; g > 0 && !st[opp].GameOver {
-				st[opp].AddGarbage(g)
-				if st[opp].GameOver {
-					winner = p
-					return false
-				}
-			}
-		}
-		if !st[p].SpawnNext() {
-			winner = 1 - p
-			return false
-		}
-		return true
-	}
-
-	for p := range st {
-		if !st[p].SpawnNext() {
+	for p := range eng {
+		if !eng[p].Start() {
 			return
 		}
-	}
-
-	// Independent gravity timers — each player's speed tracks their own level and
-	// GravityMultiplier, so powerups that alter one player's speed don't affect the other.
-	var gravityTimer [2]*time.Timer
-	defer func() {
-		for p := range gravityTimer {
-			if gravityTimer[p] != nil {
-				gravityTimer[p].Stop()
-			}
-		}
-	}()
-	scheduleGravity := func(p int) {
-		interval := time.Duration(float64(gravityInterval(st[p].Level)) / st[p].GravityMultiplier)
-		gravityTimer[p] = time.AfterFunc(interval, func() {
-			s.PostEvent(tcell.NewEventInterrupt(gravityEvent{p}))
-		})
-	}
-	for p := range st {
-		scheduleGravity(p)
 	}
 
 	p2OriginX := render.TotalWidth + 2
 
 	draw := func() {
 		s.Clear()
-		render.Draw(s, st[0], 0, 0)
-		render.Draw(s, st[1], p2OriginX, 0)
+		render.Draw(s, eng[0].State, 0, 0)
+		render.Draw(s, eng[1].State, p2OriginX, 0)
 		for i, ch := range "P1: WASD+E" {
 			s.SetContent(i, 0, ch, nil, tcell.StyleDefault)
 		}
@@ -350,6 +174,24 @@ func run2P(s tcell.Screen) {
 	}
 	draw()
 
+	winner := -1
+
+	// routeGarbage sends garbage rows to the opponent when a player clears lines.
+	// Returns false (and sets winner) if the garbage kills the opponent.
+	// Keeping this in main rather than inside the engine is intentional: for LAN,
+	// garbage crosses a network boundary instead of calling AddGarbage directly.
+	routeGarbage := func(scorer, cleared int) bool {
+		opp := 1 - scorer
+		g := garbageRows[min(cleared, 4)]
+		if g > 0 && !eng[opp].State.GameOver {
+			if !eng[opp].State.AddGarbage(g) {
+				winner = scorer
+				return false
+			}
+		}
+		return true
+	}
+
 gameLoop:
 	for {
 		switch ev := s.PollEvent().(type) {
@@ -358,36 +200,33 @@ gameLoop:
 			if action == game.ActionQuit {
 				return
 			}
-			if action == game.ActionNone || st[p].GameOver {
+			if action == game.ActionNone || eng[p].State.GameOver {
 				break
 			}
-			ih[p].Handle(action)
-			if action == game.ActionHardDrop {
-				if !lockAndSpawn(p) {
-					break gameLoop
-				}
-			} else {
-				if st[p].IsGrounded() {
-					startLock(p)
-				} else {
-					cancelLock(p)
-				}
+			cleared, alive := eng[p].HandleAction(action)
+			if cleared > 0 && !routeGarbage(p, cleared) {
+				break gameLoop
+			}
+			if !alive {
+				winner = 1 - p
+				break gameLoop
 			}
 		case *tcell.EventInterrupt:
 			switch data := ev.Data().(type) {
-			case gravityEvent:
-				p := data.player
-				if !st[p].GameOver {
-					if !st[p].MoveDown() {
-						startLock(p)
-					} else {
-						cancelLock(p)
-					}
-					scheduleGravity(p)
+			case engine.GravityEvent:
+				p := data.Player
+				if !eng[p].State.GameOver {
+					eng[p].HandleGravity()
 				}
-			case lockEvent:
-				if data.gen == lockGen[data.player] && !st[data.player].GameOver {
-					if !lockAndSpawn(data.player) {
+			case engine.LockEvent:
+				p := data.Player
+				if !eng[p].State.GameOver {
+					cleared, alive := eng[p].HandleLock(data.Gen)
+					if cleared > 0 && !routeGarbage(p, cleared) {
+						break gameLoop
+					}
+					if !alive {
+						winner = 1 - p
 						break gameLoop
 					}
 				}
