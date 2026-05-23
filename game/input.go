@@ -1,5 +1,7 @@
 package game
 
+import "fmt"
+
 // Action represents a single player intent, decoupled from any input device.
 type Action uint8
 
@@ -12,6 +14,27 @@ const (
 	ActionRotateCW
 	ActionQuit
 )
+
+func (a Action) String() string {
+	switch a {
+	case ActionNone:
+		return "none"
+	case ActionLeft:
+		return "left"
+	case ActionRight:
+		return "right"
+	case ActionSoftDrop:
+		return "softDrop"
+	case ActionHardDrop:
+		return "hardDrop"
+	case ActionRotateCW:
+		return "rotateCW"
+	case ActionQuit:
+		return "quit"
+	default:
+		return fmt.Sprintf("action(%d)", uint8(a))
+	}
+}
 
 // InputHandler applies Actions to State.
 type InputHandler struct {

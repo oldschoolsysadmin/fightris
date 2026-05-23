@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"log"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -74,6 +75,7 @@ type GameEngine struct {
 
 // New creates a GameEngine for the given player index. Call Start to begin play.
 func New(s tcell.Screen, playerID int) *GameEngine {
+	log.Printf("[P%d] engine.New", playerID)
 	st := game.New()
 	return &GameEngine{
 		State:  st,
@@ -87,7 +89,9 @@ func New(s tcell.Screen, playerID int) *GameEngine {
 // Returns false only if the board is immediately blocked on a fresh state
 // (shouldn't happen in practice).
 func (e *GameEngine) Start() bool {
-	if !e.State.SpawnNext() {
+	ok := e.State.SpawnNext()
+	log.Printf("[P%d] Start: spawnOk=%v next=%v", e.id, ok, e.State.NextPiece)
+	if !ok {
 		return false
 	}
 	e.scheduleGravity()
@@ -96,6 +100,7 @@ func (e *GameEngine) Start() bool {
 
 // Stop cancels all pending timers. Safe to call multiple times.
 func (e *GameEngine) Stop() {
+	log.Printf("[P%d] Stop", e.id)
 	if e.gravTimer != nil {
 		e.gravTimer.Stop()
 	}
@@ -113,9 +118,13 @@ func (e *GameEngine) Stop() {
 // All other actions (move, rotate, soft drop) update the piece position and
 // adjust lock-delay timers as needed. Always return (0, true).
 func (e *GameEngine) HandleAction(a game.Action) (cleared int, alive bool) {
+	log.Printf("[P%d] HandleAction: %v piece=%v row=%d grounded=%v",
+		e.id, a, e.State.Active.Type, e.State.Active.PivotRow, e.State.IsGrounded())
 	if a == game.ActionHardDrop {
 		e.ih.Handle(a)
-		return e.lockAndSpawn()
+		cleared, alive = e.lockAndSpawn()
+		log.Printf("[P%d] HandleAction hardDrop → cleared=%d alive=%v", e.id, cleared, alive)
+		return
 	}
 	e.ih.Handle(a)
 	if e.State.IsGrounded() {
@@ -129,7 +138,9 @@ func (e *GameEngine) HandleAction(a game.Action) (cleared int, alive bool) {
 // HandleGravity advances the piece one row down and reschedules the next gravity
 // tick. If the piece can't move down, the lock-delay timer is started.
 func (e *GameEngine) HandleGravity() {
-	if !e.State.MoveDown() {
+	moved := e.State.MoveDown()
+	log.Printf("[P%d] HandleGravity: moved=%v row=%d level=%d", e.id, moved, e.State.Active.PivotRow, e.State.Level)
+	if !moved {
 		e.startLock()
 	} else {
 		e.cancelLock()
@@ -142,31 +153,38 @@ func (e *GameEngine) HandleGravity() {
 // Returns lines cleared and whether the game is still alive.
 // Stale events (gen mismatch, from timers reset by a move) return (0, true).
 func (e *GameEngine) HandleLock(gen int) (cleared int, alive bool) {
+	log.Printf("[P%d] HandleLock: event gen=%d current gen=%d", e.id, gen, e.lockGen)
 	if gen != e.lockGen {
+		log.Printf("[P%d] HandleLock: stale, ignored", e.id)
 		return 0, true
 	}
-	return e.lockAndSpawn()
+	cleared, alive = e.lockAndSpawn()
+	log.Printf("[P%d] HandleLock: cleared=%d alive=%v", e.id, cleared, alive)
+	return
 }
 
 // lockAndSpawn locks the active piece, clears full rows, and spawns the next.
 // Garbage routing is the caller's responsibility; this method only returns
 // the line count so the caller can act on it.
 func (e *GameEngine) lockAndSpawn() (cleared int, alive bool) {
+	log.Printf("[P%d] lockAndSpawn: locking piece=%v row=%d", e.id, e.State.Active.Type, e.State.Active.PivotRow)
 	cleared = e.State.LockActive()
 	e.cancelLock()
-	if !e.State.SpawnNext() {
-		return cleared, false
-	}
-	return cleared, true
+	alive = e.State.SpawnNext()
+	log.Printf("[P%d] lockAndSpawn: cleared=%d spawnOk=%v next=%v score=%d level=%d",
+		e.id, cleared, alive, e.State.NextPiece, e.State.Score, e.State.Level)
+	return cleared, alive
 }
 
 func (e *GameEngine) startLock() {
 	e.lockGen++
 	gen := e.lockGen
+	log.Printf("[P%d] startLock: gen=%d", e.id, gen)
 	if e.lockTimer != nil {
 		e.lockTimer.Stop()
 	}
 	e.lockTimer = time.AfterFunc(LockDelay, func() {
+		log.Printf("[P%d] lockTimer fired: gen=%d", e.id, gen)
 		e.screen.PostEvent(tcell.NewEventInterrupt(LockEvent{e.id, gen}))
 	})
 }
@@ -175,6 +193,7 @@ func (e *GameEngine) cancelLock() {
 	if e.lockTimer != nil {
 		e.lockTimer.Stop()
 		e.lockTimer = nil
+		log.Printf("[P%d] cancelLock: timer stopped, gen %d→%d", e.id, e.lockGen, e.lockGen+1)
 	}
 	e.lockGen++
 }
@@ -183,6 +202,7 @@ func (e *GameEngine) cancelLock() {
 // level-ups and powerup effects take hold on the very next tick.
 func (e *GameEngine) scheduleGravity() {
 	interval := time.Duration(float64(gravityInterval(e.State.Level)) / e.State.GravityMultiplier)
+	log.Printf("[P%d] scheduleGravity: level=%d interval=%v", e.id, e.State.Level, interval)
 	e.gravTimer = time.AfterFunc(interval, func() {
 		e.screen.PostEvent(tcell.NewEventInterrupt(GravityEvent{e.id}))
 	})
