@@ -14,9 +14,15 @@ rationale behind any design decisions before implementing in code.
 ## Usage
 
 ```
-fightris -1p     # single player, arrow keys + space  # TODO: make this the default
-fightris -2p     # two players, one terminal (WASD+E vs arrows+space)
+fightris -1p                    # single player, arrow keys + space  # TODO: make this the default
+fightris -2p                    # two players, one terminal (WASD+E vs arrows+space)
+fightris -host [-port N]        # host a LAN match, wait for a joiner
+fightris -join <addr> [-spam N] # join a LAN match (addr like 192.168.1.5:4000; :4000 assumed if no port)
 ```
+
+All runs write a verbose event log to `fightris.log` in the working directory
+(timer ticks, locks, garbage, network packets, panics with stack traces) — tcell
+owns the terminal, so logs can't go to stdout.
 
 ## Current State
 
@@ -44,14 +50,31 @@ Working two-player local versus mode:
 
 ## Milestone 2: Two-player LAN deathmatch
 
-- Two `game.State` objects, one local one remote
+**Status: first playable cut landed (`netplay/` package + `runLAN`).** Verified by
+unit tests (snapshot/effect round-trip, localhost handshake); full match needs two
+real terminals to exercise the loop.
+
+Design — **authoritative-local + snapshots** (not lockstep):
+
+- Each machine simulates ONLY its own board, authoritatively. Two `game.State`
+  objects per process: one local (simulated) and one remote (a render-only shadow
+  overwritten by incoming snapshots, never simulated). Consequence: **no seeded bag
+  needed** — that's a lockstep-only requirement.
 - Protocol: UDP from day one — LAN is direct, internet (Side Quest) just adds a
-  connection-establishment step on top of the same protocol
-- Serialize/deserialize `State` deltas (lines cleared → garbage rows sent to opponent)
-- Reliability: send N redundant copies of each packet; receiver deduplicates by payload ID.
-  No ACK/retransmit needed. A `--spam N` flag (default 1, crank up on lossy links) controls
-  redundancy.
-- Deathmatch: last player alive wins the match
+  connection-establishment step on top of the same handshake.
+- Two message types, two delivery semantics:
+  - **Snapshot** — sender's board for the peer to render. Latest-wins (drop `seq` ≤
+    last seen); idempotent, so a lost snapshot is simply superseded.
+  - **Effect** — an apply-once command the receiver runs against its OWN board,
+    deduped by payload ID. Garbage is the first effect; **only the row count crosses
+    the wire** (the receiver picks the hole locally). Effects are the powerup
+    extension seam (see M4) — new opponent-affecting powerups add an Effect *kind*,
+    not a new packet type.
+- Reliability: send N redundant copies of each packet; receiver dedups (snapshots by
+  seq, effects by id). No ACK/retransmit. `-spam N` flag (default 1, raise on lossy
+  links) controls redundancy.
+- Deathmatch: `GameOver` rides in the snapshot; the dier keeps broadcasting it, the
+  survivor wins.
 
 ## Side Quest - Serverless matchmaker package
 
@@ -117,5 +140,15 @@ display flip) get callbacks on `State`.
   of calling `AddGarbage` directly
 - `render/render.go` — tcell renderer; `Draw(s, st, originX, originY int)`;
   `TotalWidth` exported so callers know where to place a second board
-- `main.go` — `Keymap` struct + per-player keymaps; `run1P` / `run2P` game loops;
-  `routeGarbage` closure in `run2P` is the seam LAN will replace with a network send
+- `netplay/` — UDP LAN transport. `Packet` envelope (hello/snapshot/effect),
+  JSON-encoded; `Listen`/`Dial` do the handshake; `send` writes `-spam` redundant
+  copies; `Run` reads in a goroutine, dedups (snapshot latest-wins, effect
+  apply-once), and posts decoded packets into the tcell event queue as
+  `netplay.Incoming` — so all `game.State` mutation stays on the single loop
+  goroutine, no locks. `message.go` holds the wire types + `Snapshot.ApplyTo` (rebuild
+  a shadow `State` for rendering) and the `Effect`/`GarbageEffect` powerup seam.
+- `main.go` — `flag`-based mode select (`-1p`/`-2p`/`-host`/`-join`/`-port`/`-spam`);
+  `Keymap` struct + per-player keymaps; `run1P` / `run2P` / `runLAN` game loops; log
+  redirected to `fightris.log` and `recover()` in each loop dumps stack traces there.
+  In `run2P` the `routeGarbage` closure is the local seam; `runLAN` is the network
+  version (clears send a garbage Effect; the opponent board is a snapshot-fed shadow)
